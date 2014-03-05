@@ -20,21 +20,68 @@
 import argparse, logging, sys
 from collections import OrderedDict
 
-logger = logging.getLogger("logger")
+from lxml import etree
+import sys
+from urllib.parse import urlparse
+import rank_provider as rp
+
+providers = (rp.AlexaTrafficRank(), rp.GooglePageRank(),)
 
 def scrap(args):
-    print(args.interactive)
-    pass
+    logger = logging.getLogger("scrap")
+
+    def fast_iter(context, func):
+        for event, elem in context:
+            func(elem)
+            elem.clear()
+            while elem.getprevious() is not None:
+                del elem.getparent()[0]
+        del context
+
+    with open(args.result_file, 'w') as r:
+        __set = set()
+
+        def prettyprint(elem):
+            link = elem.attrib.get(args.attribute_name, '')
+            o = urlparse(link)
+            if o.netloc in __set: return
+
+            __set.add(o.netloc)
+            r.write('%s%c %s%c ' % (o.netloc, args.separator, link,
+                                    args.separator))
+
+            for child in elem.getchildren():
+                r.write('%s%c ' % (child.text.encode(),
+                                   args.separator))
+
+            r.write('\n')
+
+        try:
+            context = etree.iterparse(args.content_file, tag=args.tag)
+            fast_iter(context, prettyprint)
+        except FileNotFoundError as e:
+            logger.error('content file (%s) not found.' % args.content_file)
 
 def rank(args):
-    pass
+    logger = logging.getLogger("rank")
+
+    with open(args.result_file, 'w') as r:
+        with open(args.content_file, 'r') as c:
+            for line in c:
+                netloc = line.split(args.separator)[0]
+
+                for p in providers:
+                    r.write('%s%c %d%c\n' % (netloc, args.separator,
+                                             p.get_rank(netloc) or 0,
+                                             args.separator))
+                    r.flush()
 
 def shot(args):
-    pass
+    logger = logging.getLogger("shot")
 
 if __name__ == '__main__':
+    logger = logging.getLogger("main")
     common_options = {'formatter_class': argparse.ArgumentDefaultsHelpFormatter}
-
     parser = argparse.ArgumentParser(description='dmoz scrapping program.', **common_options)
 
     levels = OrderedDict([('debug', logging.DEBUG),
@@ -58,16 +105,21 @@ if __name__ == '__main__':
     sp.add_argument('--content_file', '-c', help='Path to the content file', default='content.rdf.u8')
     sp.add_argument('--result_file', '-r', help='Path to the resulting file (csv)', default='websites.csv')
     sp.add_argument('--interactive', '-i', help='interactive mode', action='store_true', default=False)
+    sp.add_argument('--tag', '-T', help='tag used as pattern to select content', default='{http://dmoz.org/rdf/}ExternalPage')
+    sp.add_argument('--attribute_name', help='attribute name used to identify links', default='about')
     sp.set_defaults(func=scrap)
 
     sp = subparsers.add_parser('rank', help='Compute alex and page ranks', **common_options)
     sp.add_argument('--content_file', '-c', help='Path to the websites file (csv)', default='websites.csv')
+    sp.add_argument('--result_file', '-r', help='Path to the result file (csv)', default='ranking.csv')
     sp.set_defaults(func=rank)
 
     sp = subparsers.add_parser('shot', help='Screenshot websites', **common_options)
     sp.add_argument('--content_file', '-c', help='Path to the websites file (csv)', default='websites.csv')
     sp.add_argument('--directory', '-D', help='Path to a directory where images will be saved', default='screenshots')
     sp.set_defaults(func=shot)
+
+    parser.add_argument('--separator', '-S', help='Separator used for csv file.', default=';')
 
     args = parser.parse_args()
 
