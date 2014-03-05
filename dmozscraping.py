@@ -51,7 +51,7 @@ def scrap(args):
                                     args.separator))
 
             for child in elem.getchildren():
-                r.write('%s%c ' % (child.text.encode(),
+                r.write('%s%c ' % (child.text.encode() if child.text else '',
                                    args.separator))
 
             r.write('\n')
