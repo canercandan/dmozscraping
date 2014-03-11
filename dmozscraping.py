@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,10 +22,15 @@ from collections import OrderedDict
 
 from lxml import etree
 import sys
-from urllib.parse import urlparse
-import rank_provider as rp
 
-providers = (rp.AlexaTrafficRank(), rp.GooglePageRank(),)
+#from urllib.parse import urlparse
+#import rank_provider as rp
+
+import urllib2
+from urlparse import urlparse
+import rank_provider2 as rp
+
+#providers = (rp.AlexaTrafficRank(), rp.GooglePageRank(),)
 
 def scrap(args):
     logger = logging.getLogger("scrap")
@@ -65,15 +70,29 @@ def scrap(args):
 def rank(args):
     logger = logging.getLogger("rank")
 
+    providers = []
+    if args.alex: providers.append(rp.AlexaTrafficRank())
+    if args.google: providers.append(rp.GooglePageRank())
+
+    if not providers:
+        logger.error('no provider enabled')
+        return
+
     with open(args.result_file, 'w') as r:
         with open(args.content_file, 'r') as c:
             for line in c:
                 netloc = line.split(args.separator)[0]
 
                 for p in providers:
+                    _rank = 0
+                    try:
+                        _rank = p.get_rank(netloc) or 0
+                    except urllib2.HTTPError:
+                        _rank = 0
+                    logger.debug('%s: %d' % (netloc, _rank))
+
                     r.write('%s%c %d%c\n' % (netloc, args.separator,
-                                             p.get_rank(netloc) or 0,
-                                             args.separator))
+                                             rank, args.separator))
                     r.flush()
 
 def shot(args):
@@ -112,6 +131,8 @@ if __name__ == '__main__':
     sp = subparsers.add_parser('rank', help='Compute alex and page ranks', **common_options)
     sp.add_argument('--content_file', '-c', help='Path to the websites file (csv)', default='websites.csv')
     sp.add_argument('--result_file', '-r', help='Path to the result file (csv)', default='ranking.csv')
+    sp.add_argument('--alex', '-a', action='store_true', help='enable alex rank', default=False)
+    sp.add_argument('--google', '-g', action='store_true', help='enable google page rank', default=False)
     sp.set_defaults(func=rank)
 
     sp = subparsers.add_parser('shot', help='Screenshot websites', **common_options)
@@ -124,9 +145,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.levels:
-        print("Here's the verbose levels available:")
+        print "Here's the verbose levels available:"
         for keys in levels.keys():
-            print("\t", keys)
+            print "\t", keys
         sys.exit()
 
     if (args.output):
